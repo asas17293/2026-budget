@@ -192,6 +192,7 @@
             loadLocalData();
             renderHeaderMonths();
             renderUI();
+            loadCloudData(); //
         });
 
         // ==========================================
@@ -492,8 +493,35 @@
                 btn.classList.remove('text-green-600', 'border-green-300');
             }, 1500);
         }
+async function loadCloudData() {
+    if (!API_URL) return; 
+
+    // 顯示載入中的提示
+    const titleEl = document.getElementById('appTitle');
+    titleEl.innerText = "資料同步中...";
+
+    try {
+        const response = await fetch(API_URL);
+        const cloudData = await response.json();
+
+        if (cloudData.income || cloudData.expense) {
+            appData.income = cloudData.income || [];
+            appData.expense = cloudData.expense || [];
+            
+            renderUI();
+            updateStats();
+            saveLocalData(); 
+            console.log("雲端資料同步成功！");
+        }
+    } catch (error) {
+        console.error("同步失敗:", error);
+    } finally {
+        titleEl.innerText = appData.title; 
+    }
+}
     </script>
 </body>
 
 </html>
+
 
