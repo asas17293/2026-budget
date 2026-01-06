@@ -1,545 +1,105 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Earth Budget 2026</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+// 渲染主要資料列 (UI Rendering)
+function renderUI() {
+    // 如果是統計頁面就不執行
+    if (currentTab === 'stats') return;
+
+    const container = document.getElementById('dataRowsContainer');
+    container.innerHTML = '';
+    const data = appData[currentTab];
+
+    // ✨✨✨ [新增 1] 準備一個陣列來存 1-12 月的總合
+    let monthlyTotals = Array(12).fill(0);
+
+    // 渲染每一個項目 (房租、薪水...)
+    data.forEach((item, rowIndex) => {
+        const rowDiv = document.createElement('div');
+        rowDiv.className = "budget-row group";
+
+        // 1. 項目名稱輸入框
+        let nameHtml = `
+            <div class="pl-2 pr-4 relative">
+                <input type="text" value="${item.name}" 
+                    class="w-full bg-transparent border-b border-transparent focus:border-gray-400 focus:outline-none font-medium text-gray-700 py-1 transition"
+                    onchange="updateItemName(${rowIndex}, this.value)">
+            </div>
+        `;
+        
+        // 2. 畫出 12 個月份的格子
+        let monthsHtml = '';
+        for (let i = 0; i < 12; i++) {
+            const val = item.values[i] || 0;
+            
+            // ✨✨✨ [新增 2] 順便計算總合 (把錢加進去)
+            monthlyTotals[i] += val;
+
+            // 處理長條圖的圓角與顏色 (原本的邏輯)
+            const prevVal = item.values[i-1] || 0;
+            const nextVal = item.values[i+1] || 0;
+            
+            let shapeClass = 'bar-track'; 
+            let textClass = 'text-transparent group-hover:text-gray-300'; 
+
+            if (val > 0) {
+                shapeClass = 'bar-active shadow-sm'; 
+                textClass = 'text-white font-bold';
+                
+                if (prevVal === 0 && nextVal > 0) shapeClass += ' rounded-l-full'; 
+                else if (prevVal > 0 && nextVal === 0) shapeClass += ' rounded-r-full'; 
+                else if (prevVal === 0 && nextVal === 0) shapeClass += ' rounded-full scale-90'; 
+                else shapeClass += ' rect-flat'; 
+            }
+
+            monthsHtml += `
+                <div class="month-cell col-${i+1} ${shapeClass}">
+                    <input type="number" 
+                        class="invisible-input ${textClass}" 
+                        value="${val > 0 ? val : ''}" 
+                        placeholder=""
+                        onchange="updateValue(${rowIndex}, ${i}, this.value)"
+                    >
+                </div>
+            `;
+        }
+
+        // 3. 刪除按鈕
+        let deleteHtml = `
+            <div class="text-center opacity-0 group-hover:opacity-100 transition cursor-pointer text-gray-300 hover:text-red-400"
+                 onclick="deleteRow(${rowIndex})">
+                <i class="fas fa-times"></i>
+            </div>
+        `;
+
+        rowDiv.innerHTML = nameHtml + monthsHtml + deleteHtml;
+        container.appendChild(rowDiv);
+    });
+
+    // ✨✨✨ [新增 3] 項目迴圈結束後，在這裡畫出「總計列」
+    const totalRow = document.createElement('div');
+    // 設定虛線邊框 (border-dashed) 讓它跟上面分開
+    totalRow.className = "budget-row mt-3 pt-2 border-t-2 border-dashed border-gray-200"; 
     
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
-        
-        body { font-family: 'Noto Sans TC', sans-serif; background-color: #FAF9F6; color: #4A4A4A; }
+    // 總計標題
+    let totalHtml = `
+        <div class="pl-2 font-bold text-gray-500 text-sm text-right pr-4">
+            <i class="fas fa-calculator mr-1"></i> 月總計
+        </div>`;
+    
+    // 把剛剛算好的 monthlyTotals 填進去
+    monthlyTotals.forEach((sum, i) => {
+        // 判斷顏色：收入用橘色，支出用褐色
+        let colorClass = currentTab === 'income' ? 'text-[#E27D60]' : 'text-[#8F7A6E]';
+        if(sum === 0) colorClass = 'text-gray-300'; // 0 的話變灰色
 
-        /* === 色彩系統定義 === */
-        /* 支出 - 敘利亞大地色 */
-        .theme-expense .bar-active { background-color: #8F7A6E; color: white; } /* 泥土褐 */
-        .theme-expense .bar-track { background-color: #F0EBE5; } /* 淺沙色軌道 */
-        .theme-expense .text-accent { color: #8F7A6E; }
-        .theme-expense .bg-accent { background-color: #8F7A6E; }
-        
-        /* 收入 - 豐收珊瑚色 */
-        .theme-income .bar-active { background-color: #E27D60; color: white; } /* 珊瑚橘 */
-        .theme-income .bar-track { background-color: #FDF2EE; } /* 淺粉軌道 */
-        .theme-income .text-accent { color: #E27D60; }
-        .theme-income .bg-accent { background-color: #E27D60; }
-
-        /* === 連續長條圖核心 CSS === */
-        .budget-row { display: grid; grid-template-columns: 180px repeat(12, 1fr) 40px; gap: 2px; align-items: center; margin-bottom: 8px; }
-        
-        .month-cell { 
-            height: 48px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            font-size: 0.85rem;
-            position: relative;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        /* 圓角邏輯：由 JS 動態添加 class */
-        .rounded-l-full { border-top-left-radius: 999px; border-bottom-left-radius: 999px; }
-        .rounded-r-full { border-top-right-radius: 999px; border-bottom-right-radius: 999px; }
-        .rect-flat { border-radius: 0; } /* 中間連接處 */
-
-        .editable-name:hover { background: rgba(0,0,0,0.05); border-radius: 6px; }
-        .editable-title:hover { border-bottom: 2px dashed #ccc; }
-
-        /* 月份高亮效果 */
-        .highlight-col { background-color: rgba(0,0,0,0.05) !important; mix-blend-mode: multiply;}
-        
-        /* 去除 Input 預設樣式 */
-        .invisible-input {
-            background: transparent; border: none; text-align: center; width: 100%; color: inherit; font-weight: bold;
-        }
-        .invisible-input:focus { outline: none; background: rgba(255,255,255,0.3); }
-
-        /* 隱藏數字輸入框箭頭 */
-        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-    </style>
-</head>
-<body class="p-4 md:p-8 min-h-screen transition-colors duration-500" id="mainBody">
-
-    <div class="max-w-[1400px] mx-auto mb-8 flex flex-col md:flex-row justify-between items-start md:items-center">
-        <div class="mb-4 md:mb-0">
-            <h1 class="text-3xl font-bold text-gray-700 editable-title cursor-pointer" 
-                contenteditable="true" id="appTitle">地球預算 2026</h1>
-            <p class="text-gray-400 text-sm tracking-widest mt-1">ANNUAL FINANCIAL PLANNING</p>
-        </div>
-        
-        <div class="flex bg-white p-1 rounded-full shadow-sm border border-gray-200">
-            <button onclick="switchTab('expense')" id="tab-expense" class="px-6 py-2 rounded-full text-sm font-medium transition-all bg-gray-700 text-white shadow">
-                支出分配
-            </button>
-            <button onclick="switchTab('income')" id="tab-income" class="px-6 py-2 rounded-full text-sm font-medium transition-all text-gray-500 hover:text-orange-500">
-                收入概覽
-            </button>
-            <button onclick="switchTab('stats')" id="tab-stats" class="px-6 py-2 rounded-full text-sm font-medium transition-all text-gray-500 hover:text-gray-800">
-                統計分析
-            </button>
-        </div>
-        
-        <div class="mt-4 md:mt-0">
-            <button onclick="saveData()" id="saveBtn" class="flex items-center gap-2 bg-white border border-gray-300 px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-50 transition shadow-sm">
-                <i class="fas fa-cloud-upload-alt"></i>
-                <span>儲存變更</span>
-            </button>
-        </div>
-    </div>
-
-    <div class="max-w-[1400px] mx-auto">
-        
-        <div id="tableSection" class="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 overflow-x-auto">
-            
-            <div class="budget-row mb-4 border-b border-gray-100 pb-2">
-                <div class="font-bold text-gray-400 pl-2">項目名稱</div>
-                <div id="monthHeaders" class="contents"></div>
-                <div class="text-center text-gray-300"><i class="fas fa-trash"></i></div>
+        totalHtml += `
+            <div class="text-center font-bold text-xs md:text-sm ${colorClass} col-${i+1}">
+                ${sum > 0 ? sum.toLocaleString() : '-'}
             </div>
+        `;
+    });
 
-            <div id="dataRowsContainer"></div>
+    // 最後補一個空 div 對齊刪除鈕
+    totalHtml += `<div></div>`;
 
-            <div class="mt-6">
-                <button onclick="addNewRow()" id="addBtn" class="flex items-center gap-2 px-4 py-2 rounded-lg transition opacity-80 hover:opacity-100 text-white font-medium">
-                    <i class="fas fa-plus"></i> 新增項目
-                </button>
-            </div>
-        </div>
-
-        <div id="statsSection" class="hidden space-y-8">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-[#E27D60] text-white p-6 rounded-2xl shadow-lg relative overflow-hidden">
-                    <div class="relative z-10">
-                        <p class="text-white/80 text-sm mb-1">年度總收入</p>
-                        <h2 class="text-3xl font-bold" id="statTotalIncome">$0</h2>
-                    </div>
-                    <i class="fas fa-coins absolute -bottom-4 -right-4 text-8xl text-white/10"></i>
-                </div>
-                <div class="bg-[#8F7A6E] text-white p-6 rounded-2xl shadow-lg relative overflow-hidden">
-                    <div class="relative z-10">
-                        <p class="text-white/80 text-sm mb-1">年度總支出</p>
-                        <h2 class="text-3xl font-bold" id="statTotalExpense">$0</h2>
-                    </div>
-                    <i class="fas fa-shopping-bag absolute -bottom-4 -right-4 text-8xl text-white/10"></i>
-                </div>
-                <div class="bg-[#A4B494] text-white p-6 rounded-2xl shadow-lg relative overflow-hidden">
-                    <div class="relative z-10">
-                        <p class="text-white/80 text-sm mb-1">年度總盈餘</p>
-                        <h2 class="text-3xl font-bold" id="statBalance">$0</h2>
-                    </div>
-                    <i class="fas fa-piggy-bank absolute -bottom-4 -right-4 text-8xl text-white/10"></i>
-                </div>
-            </div>
-
-            <div class="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-                <h3 class="font-bold text-gray-600 mb-6 border-l-4 border-[#8F7A6E] pl-3">年度收支對比</h3>
-                <div class="h-80">
-                    <canvas id="comparisonChart"></canvas>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-                    <h3 class="font-bold text-gray-600 mb-6 border-l-4 border-[#E27D60] pl-3">收入來源佔比</h3>
-                    <div class="h-64 flex justify-center">
-                        <canvas id="incomePieChart"></canvas>
-                    </div>
-                </div>
-                <div class="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-                    <h3 class="font-bold text-gray-600 mb-6 border-l-4 border-[#8F7A6E] pl-3">支出項目佔比</h3>
-                    <div class="h-64 flex justify-center">
-                        <canvas id="expensePieChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-    </div>
-
-    <script>
-        // ==========================================
-        // 配置與資料結構
-        // ==========================================
-        // 若要連結 Google Sheets，請填入 Web App URL
-        const API_URL = "https://script.google.com/macros/s/AKfycbx5YbBEaSsEWRH4GW0RqUiYlIsVdQ1uOUWnjVg_JwxoPIcs0OiRx2P-9P0nJnZivNvuqA/exec"; 
-
-        let appData = {
-            title: "地球預算 2026",
-            expense: [
-                { name: "房租", values: [12000, 12000, 12000, 12000, 12000, 12000, 12000, 12000, 12000, 12000, 12000, 12000] },
-                { name: "手機分期", values: [3000, 3000, 3000, 3000, 3000, 3000, 0, 0, 0, 0, 0, 0] },
-                { name: "保險費", values: [0, 0, 0, 0, 0, 24000, 0, 0, 0, 0, 0, 24000] }
-            ],
-            income: [
-                { name: "本薪", values: [50000, 50000, 50000, 50000, 50000, 50000, 50000, 50000, 50000, 50000, 50000, 50000] },
-                { name: "年終獎金", values: [120000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-                { name: "股票股利", values: [0, 0, 0, 0, 0, 0, 0, 15000, 0, 0, 0, 0] }
-            ]
-        };
-
-        let currentTab = 'expense'; // expense | income | stats
-        let comparisonChartInstance = null;
-        let incomePieInstance = null;
-        let expensePieInstance = null;
-
-        // ==========================================
-        // 初始化
-        // ==========================================
-        document.addEventListener('DOMContentLoaded', () => {
-            loadLocalData();
-            renderHeaderMonths();
-            renderUI();
-            loadCloudData();
-        });
-
-        // ==========================================
-        // 渲染邏輯 (UI Rendering)
-        // ==========================================
-        
-        function switchTab(tab) {
-            currentTab = tab;
-            
-            // 更新按鈕樣式
-            ['expense', 'income', 'stats'].forEach(t => {
-                const btn = document.getElementById(`tab-${t}`);
-                if (t === tab) {
-                    btn.classList.remove('bg-white', 'text-gray-500');
-                    // 根據 tab 設定不同主色
-                    if (tab === 'income') btn.className = "px-6 py-2 rounded-full text-sm font-medium transition-all bg-[#E27D60] text-white shadow transform scale-105";
-                    else if (tab === 'expense') btn.className = "px-6 py-2 rounded-full text-sm font-medium transition-all bg-[#8F7A6E] text-white shadow transform scale-105";
-                    else btn.className = "px-6 py-2 rounded-full text-sm font-medium transition-all bg-[#A4B494] text-white shadow transform scale-105";
-                } else {
-                    btn.className = "px-6 py-2 rounded-full text-sm font-medium transition-all bg-transparent text-gray-500 hover:bg-gray-100";
-                }
-            });
-
-            // 切換區域
-            const tableSection = document.getElementById('tableSection');
-            const statsSection = document.getElementById('statsSection');
-            const body = document.getElementById('mainBody');
-            const addBtn = document.getElementById('addBtn');
-
-            if (tab === 'stats') {
-                tableSection.classList.add('hidden');
-                statsSection.classList.remove('hidden');
-                updateStats(); // 渲染圖表
-            } else {
-                tableSection.classList.remove('hidden');
-                statsSection.classList.add('hidden');
-                
-                // 設定主題色 CSS class
-                body.className = tab === 'income' 
-                    ? "p-4 md:p-8 min-h-screen transition-colors duration-500 theme-income" 
-                    : "p-4 md:p-8 min-h-screen transition-colors duration-500 theme-expense";
-                
-                // 設定按鈕顏色
-                addBtn.className = tab === 'income'
-                    ? "flex items-center gap-2 px-4 py-2 rounded-lg transition opacity-80 hover:opacity-100 text-white font-medium bg-[#E27D60]"
-                    : "flex items-center gap-2 px-4 py-2 rounded-lg transition opacity-80 hover:opacity-100 text-white font-medium bg-[#8F7A6E]";
-
-                renderUI();
-            }
-        }
-
-        // 渲染表頭月份 (1-12)
-        function renderHeaderMonths() {
-            const container = document.getElementById('monthHeaders');
-            container.innerHTML = '';
-            for(let i=1; i<=12; i++) {
-                const div = document.createElement('div');
-                div.className = "text-center text-sm font-medium text-gray-400 cursor-pointer hover:text-gray-600 transition";
-                div.innerText = `${i}月`;
-                div.onclick = () => highlightColumn(i);
-                container.appendChild(div);
-            }
-        }
-
-        // 渲染主要資料列 (含每月總計功能)
-        function renderUI() {
-            if (currentTab === 'stats') return;
-
-            const container = document.getElementById('dataRowsContainer');
-            container.innerHTML = '';
-            const data = appData[currentTab];
-            
-            // 準備一個陣列來計算每月總和
-            let monthlyTotals = Array(12).fill(0);
-
-            // 1. 渲染項目
-            data.forEach((item, rowIndex) => {
-                const rowDiv = document.createElement('div');
-                rowDiv.className = "budget-row group";
-
-                // 項目名稱
-                let nameHtml = `
-                    <div class="pl-2 pr-4 relative">
-                        <input type="text" value="${item.name}" 
-                            class="w-full bg-transparent border-b border-transparent focus:border-gray-400 focus:outline-none font-medium text-gray-700 py-1 transition"
-                            onchange="updateItemName(${rowIndex}, this.value)">
-                    </div>
-                `;
-                
-                // 月份格子
-                let monthsHtml = '';
-                for (let i = 0; i < 12; i++) {
-                    const val = item.values[i] || 0;
-                    
-                    // 累加總數
-                    monthlyTotals[i] += val;
-
-                    const prevVal = item.values[i-1] || 0;
-                    const nextVal = item.values[i+1] || 0;
-                    
-                    let shapeClass = 'bar-track'; 
-                    let textClass = 'text-transparent group-hover:text-gray-300'; 
-
-                    if (val > 0) {
-                        shapeClass = 'bar-active shadow-sm'; 
-                        textClass = 'text-white font-bold';
-                        
-                        if (prevVal === 0 && nextVal > 0) shapeClass += ' rounded-l-full'; 
-                        else if (prevVal > 0 && nextVal === 0) shapeClass += ' rounded-r-full'; 
-                        else if (prevVal === 0 && nextVal === 0) shapeClass += ' rounded-full scale-90'; 
-                        else shapeClass += ' rect-flat'; 
-                    }
-
-                    monthsHtml += `
-                        <div class="month-cell col-${i+1} ${shapeClass}">
-                            <input type="number" 
-                                class="invisible-input ${textClass}" 
-                                value="${val > 0 ? val : ''}" 
-                                placeholder=""
-                                onchange="updateValue(${rowIndex}, ${i}, this.value)"
-                            >
-                        </div>
-                    `;
-                }
-
-                // 刪除按鈕
-                let deleteHtml = `
-                    <div class="text-center opacity-0 group-hover:opacity-100 transition cursor-pointer text-gray-300 hover:text-red-400"
-                         onclick="deleteRow(${rowIndex})">
-                        <i class="fas fa-times"></i>
-                    </div>
-                `;
-
-                rowDiv.innerHTML = nameHtml + monthsHtml + deleteHtml;
-                container.appendChild(rowDiv);
-            });
-
-            // 2. 渲染總計列
-            const totalRow = document.createElement('div');
-            totalRow.className = "budget-row mt-3 pt-2 border-t-2 border-dashed border-gray-200"; 
-            
-            let totalHtml = `
-                <div class="pl-2 font-bold text-gray-500 text-sm text-right pr-4">
-                    <i class="fas fa-calculator mr-1"></i> 月總計
-                </div>`;
-            
-            monthlyTotals.forEach((sum, i) => {
-                let colorClass = currentTab === 'income' ? 'text-[#E27D60]' : 'text-[#8F7A6E]';
-                if(sum === 0) colorClass = 'text-gray-300'; 
-
-                totalHtml += `
-                    <div class="text-center font-bold text-xs md:text-sm ${colorClass} col-${i+1}">
-                        ${sum > 0 ? sum.toLocaleString() : '-'}
-                    </div>
-                `;
-            });
-
-            totalHtml += `<div></div>`; // 補空位
-
-            totalRow.innerHTML = totalHtml;
-            container.appendChild(totalRow);
-        }
-
-        // ==========================================
-        // 資料操作
-        // ==========================================
-
-        function updateItemName(index, newName) {
-            appData[currentTab][index].name = newName;
-            saveLocalData();
-        }
-
-        function updateValue(rowIndex, monthIndex, value) {
-            const num = parseFloat(value) || 0;
-            appData[currentTab][rowIndex].values[monthIndex] = num;
-            renderUI(); // 重新渲染以更新長條圖形狀和總計
-            saveLocalData();
-        }
-
-        function addNewRow() {
-            appData[currentTab].push({
-                name: "新項目",
-                values: Array(12).fill(0)
-            });
-            renderUI();
-            saveLocalData();
-        }
-
-        function deleteRow(index) {
-            if(confirm('確定刪除此項目？')) {
-                appData[currentTab].splice(index, 1);
-                renderUI();
-                saveLocalData();
-            }
-        }
-
-        // 標題編輯監聽
-        document.getElementById('appTitle').addEventListener('blur', function() {
-            appData.title = this.innerText;
-            saveLocalData();
-        });
-
-        // 高亮月份功能
-        function highlightColumn(monthIndex) {
-            document.querySelectorAll('.month-cell').forEach(el => el.classList.remove('highlight-col'));
-            const cells = document.querySelectorAll(`.col-${monthIndex}`);
-            cells.forEach(el => el.classList.add('highlight-col'));
-        }
-
-        // ==========================================
-        // 統計圖表 (Chart.js)
-        // ==========================================
-        function updateStats() {
-            let monthlyIncome = Array(12).fill(0);
-            let monthlyExpense = Array(12).fill(0);
-            let totalIncome = 0;
-            let totalExpense = 0;
-            let incomeBreakdown = {};
-            let expenseBreakdown = {};
-
-            appData.income.forEach(item => {
-                let rowSum = 0;
-                item.values.forEach((v, i) => { monthlyIncome[i] += v; rowSum += v; });
-                totalIncome += rowSum;
-                incomeBreakdown[item.name] = rowSum;
-            });
-
-            appData.expense.forEach(item => {
-                let rowSum = 0;
-                item.values.forEach((v, i) => { monthlyExpense[i] += v; rowSum += v; });
-                totalExpense += rowSum;
-                expenseBreakdown[item.name] = rowSum;
-            });
-
-            document.getElementById('statTotalIncome').innerText = '$' + totalIncome.toLocaleString();
-            document.getElementById('statTotalExpense').innerText = '$' + totalExpense.toLocaleString();
-            document.getElementById('statBalance').innerText = '$' + (totalIncome - totalExpense).toLocaleString();
-
-            const ctxComp = document.getElementById('comparisonChart').getContext('2d');
-            if(comparisonChartInstance) comparisonChartInstance.destroy();
-            
-            comparisonChartInstance = new Chart(ctxComp, {
-                type: 'bar',
-                data: {
-                    labels: Array.from({length:12}, (_,i)=>`${i+1}月`),
-                    datasets: [
-                        { label: '收入', data: monthlyIncome, backgroundColor: '#E27D60', borderRadius: 4 },
-                        { label: '支出', data: monthlyExpense, backgroundColor: '#8F7A6E', borderRadius: 4 }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: { y: { beginAtZero: true, grid: { borderDash: [2, 2] } }, x: { grid: { display: false } } }
-                }
-            });
-
-            renderPieChart('incomePieChart', incomeBreakdown, ['#E27D60', '#E8A87C', '#C38D9E', '#41B3A3', '#E8A87C'], incomePieInstance, (i) => incomePieInstance = i);
-            renderPieChart('expensePieChart', expenseBreakdown, ['#8F7A6E', '#A4B494', '#C0B283', '#DCD0C0', '#373A36'], expensePieInstance, (i) => expensePieInstance = i);
-        }
-
-        function renderPieChart(canvasId, dataObj, colors, instance, setInstance) {
-            const ctx = document.getElementById(canvasId).getContext('2d');
-            if(instance) instance.destroy();
-            
-            const newInstance = new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: Object.keys(dataObj),
-                    datasets: [{
-                        data: Object.values(dataObj),
-                        backgroundColor: colors,
-                        borderWidth: 0
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { position: 'right' } }
-                }
-            });
-            setInstance(newInstance);
-        }
-
-        // ==========================================
-        // 儲存邏輯 (Local Storage + Cloud)
-        // ==========================================
-        function saveLocalData() {
-            localStorage.setItem('earthBudget2026_v2', JSON.stringify(appData));
-        }
-
-        function loadLocalData() {
-            const saved = localStorage.getItem('earthBudget2026_v2');
-            if (saved) {
-                appData = JSON.parse(saved);
-                document.getElementById('appTitle').innerText = appData.title || "地球預算 2026";
-            }
-        }
-
-        function saveData() {
-            saveLocalData(); 
-            
-            const btn = document.getElementById('saveBtn');
-            const originalContent = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check"></i> <span>已儲存</span>';
-            btn.classList.add('text-green-600', 'border-green-300');
-            
-            if (API_URL) {
-                fetch(API_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(appData)
-                }).catch(e => console.error(e));
-            }
-
-            setTimeout(() => {
-                btn.innerHTML = originalContent;
-                btn.classList.remove('text-green-600', 'border-green-300');
-            }, 1500);
-        }
-
-        async function loadCloudData() {
-            if (!API_URL) return; 
-
-            const titleEl = document.getElementById('appTitle');
-            titleEl.innerText = "資料同步中...";
-
-            try {
-                const response = await fetch(API_URL);
-                const cloudData = await response.json();
-
-                if (cloudData.income || cloudData.expense) {
-                    appData.income = cloudData.income || [];
-                    appData.expense = cloudData.expense || [];
-                    
-                    renderUI();
-                    updateStats();
-                    saveLocalData(); 
-                    console.log("雲端資料同步成功！");
-                }
-            } catch (error) {
-                console.error("同步失敗:", error);
-            } finally {
-                titleEl.innerText = appData.title; 
-            }
-        }
-    </script>
-</body>
-</html>
+    totalRow.innerHTML = totalHtml;
+    container.appendChild(totalRow);
+}
