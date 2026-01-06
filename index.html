@@ -27,7 +27,7 @@
         .theme-income .bg-accent { background-color: #E27D60; }
 
         /* === 連續長條圖核心 CSS === */
-        .budget-row { display: grid; grid-template-columns: 180px repeat(12, 1fr) 40px; gap: 2px; align-items: center; margin-bottom: 8px; }
+        .budget-row { display: grid; grid-template-columns: 180px repeat(12, 1fr) 90px; gap: 2px; align-items: center; margin-bottom: 8px; }
         
         .month-cell { 
             height: 48px; 
@@ -540,6 +540,25 @@
                 titleEl.innerText = appData.title; 
             }
         }
+        // ==========================================
+// 新增功能：移動項目順序
+// ==========================================
+function moveRow(index, direction) {
+    // direction: -1 代表向上，1 代表向下
+    const list = appData[currentTab];
+    const targetIndex = index + direction;
+
+    // 邊界檢查：如果是第一項不能往上，最後一項不能往下
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+
+    // 交換陣列中的位置 (Destructuring assignment)
+    [list[index], list[targetIndex]] = [list[targetIndex], list[index]];
+
+    // 重新渲染並存檔
+    renderUI();
+    saveLocalData();
+}
     </script>
 </body>
 </html>
+
