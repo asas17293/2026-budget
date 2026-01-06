@@ -257,19 +257,23 @@
             }
         }
 
-        // 渲染主要資料列 (連續長條圖核心邏輯)
+       // 渲染主要資料列 (含每月總計功能)
         function renderUI() {
             if (currentTab === 'stats') return;
 
             const container = document.getElementById('dataRowsContainer');
             container.innerHTML = '';
             const data = appData[currentTab];
+            
+            // 準備一個陣列來計算每月總和 (初始化 12 個 0)
+            let monthlyTotals = Array(12).fill(0);
 
+            // 1. 渲染原本的各個項目
             data.forEach((item, rowIndex) => {
                 const rowDiv = document.createElement('div');
                 rowDiv.className = "budget-row group";
 
-                // 1. 項目名稱
+                // 項目名稱
                 let nameHtml = `
                     <div class="pl-2 pr-4 relative">
                         <input type="text" value="${item.name}" 
@@ -278,25 +282,28 @@
                     </div>
                 `;
                 
-                // 2. 月份格子 (長條圖邏輯)
+                // 月份格子 (長條圖邏輯 + 累加總數)
                 let monthsHtml = '';
                 for (let i = 0; i < 12; i++) {
-                    const val = item.values[i];
+                    const val = item.values[i] || 0;
+                    
+                    // ★在這裡順便把金額加到總合裡
+                    monthlyTotals[i] += val;
+
                     const prevVal = item.values[i-1] || 0;
                     const nextVal = item.values[i+1] || 0;
                     
-                    let shapeClass = 'bar-track'; // 預設軌道色
-                    let textClass = 'text-transparent group-hover:text-gray-300'; // 預設文字隱藏
+                    let shapeClass = 'bar-track'; 
+                    let textClass = 'text-transparent group-hover:text-gray-300'; 
 
                     if (val > 0) {
-                        shapeClass = 'bar-active shadow-sm'; // 激活色
+                        shapeClass = 'bar-active shadow-sm'; 
                         textClass = 'text-white font-bold';
                         
-                        // 判斷圓角 (Visual Logic)
-                        if (prevVal === 0 && nextVal > 0) shapeClass += ' rounded-l-full'; // 起點
-                        else if (prevVal > 0 && nextVal === 0) shapeClass += ' rounded-r-full'; // 終點
-                        else if (prevVal === 0 && nextVal === 0) shapeClass += ' rounded-full scale-90'; // 單點
-                        else shapeClass += ' rect-flat'; // 中間段
+                        if (prevVal === 0 && nextVal > 0) shapeClass += ' rounded-l-full'; 
+                        else if (prevVal > 0 && nextVal === 0) shapeClass += ' rounded-r-full'; 
+                        else if (prevVal === 0 && nextVal === 0) shapeClass += ' rounded-full scale-90'; 
+                        else shapeClass += ' rect-flat'; 
                     }
 
                     monthsHtml += `
@@ -311,7 +318,7 @@
                     `;
                 }
 
-                // 3. 刪除按鈕
+                // 刪除按鈕
                 let deleteHtml = `
                     <div class="text-center opacity-0 group-hover:opacity-100 transition cursor-pointer text-gray-300 hover:text-red-400"
                          onclick="deleteRow(${rowIndex})">
@@ -322,6 +329,36 @@
                 rowDiv.innerHTML = nameHtml + monthsHtml + deleteHtml;
                 container.appendChild(rowDiv);
             });
+
+            // 2. ★ 新增：渲染「每月總計」列
+            const totalRow = document.createElement('div');
+            // 加一點上邊框與間距，讓它跟上面分開
+            totalRow.className = "budget-row mt-3 pt-2 border-t-2 border-dashed border-gray-200"; 
+            
+            // 總計標題
+            let totalHtml = `
+                <div class="pl-2 font-bold text-gray-500 text-sm text-right pr-4">
+                    <i class="fas fa-calculator mr-1"></i> 月總計
+                </div>`;
+            
+            // 12個月的總數字
+            monthlyTotals.forEach((sum, i) => {
+                // 判斷顏色：依據目前是「收入」還是「支出」給予不同顏色
+                let colorClass = currentTab === 'income' ? 'text-[#E27D60]' : 'text-[#8F7A6E]';
+                if(sum === 0) colorClass = 'text-gray-300'; // 如果是 0 就變灰色
+
+                totalHtml += `
+                    <div class="text-center font-bold text-xs md:text-sm ${colorClass} col-${i+1}">
+                        ${sum > 0 ? sum.toLocaleString() : '-'}
+                    </div>
+                `;
+            });
+
+            // 最後補一個空白格 (對齊刪除按鈕欄)
+            totalHtml += `<div></div>`;
+
+            totalRow.innerHTML = totalHtml;
+            container.appendChild(totalRow);
         }
 
         // ==========================================
@@ -523,6 +560,7 @@ async function loadCloudData() {
 </body>
 
 </html>
+
 
 
 
