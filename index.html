@@ -257,105 +257,109 @@
             }
         }
 
-        // 渲染主要資料列 (含每月總計功能)
-        function renderUI() {
-            if (currentTab === 'stats') return;
+        // 渲染主要資料列 (含移動與加總功能)
+function renderUI() {
+    if (currentTab === 'stats') return;
 
-            const container = document.getElementById('dataRowsContainer');
-            container.innerHTML = '';
-            const data = appData[currentTab];
+    const container = document.getElementById('dataRowsContainer');
+    container.innerHTML = '';
+    const data = appData[currentTab];
+    
+    let monthlyTotals = Array(12).fill(0);
+
+    data.forEach((item, rowIndex) => {
+        const rowDiv = document.createElement('div');
+        rowDiv.className = "budget-row group";
+
+        // 1. 項目名稱
+        let nameHtml = `
+            <div class="pl-2 pr-4 relative">
+                <input type="text" value="${item.name}" 
+                    class="w-full bg-transparent border-b border-transparent focus:border-gray-400 focus:outline-none font-medium text-gray-700 py-1 transition"
+                    onchange="updateItemName(${rowIndex}, this.value)">
+            </div>
+        `;
+        
+        // 2. 12個月份格子
+        let monthsHtml = '';
+        for (let i = 0; i < 12; i++) {
+            const val = item.values[i] || 0;
+            monthlyTotals[i] += val;
+
+            const prevVal = item.values[i-1] || 0;
+            const nextVal = item.values[i+1] || 0;
             
-            // 準備一個陣列來計算每月總和
-            let monthlyTotals = Array(12).fill(0);
+            let shapeClass = 'bar-track'; 
+            let textClass = 'text-transparent group-hover:text-gray-300'; 
 
-            // 1. 渲染項目
-            data.forEach((item, rowIndex) => {
-                const rowDiv = document.createElement('div');
-                rowDiv.className = "budget-row group";
-
-                // 項目名稱
-                let nameHtml = `
-                    <div class="pl-2 pr-4 relative">
-                        <input type="text" value="${item.name}" 
-                            class="w-full bg-transparent border-b border-transparent focus:border-gray-400 focus:outline-none font-medium text-gray-700 py-1 transition"
-                            onchange="updateItemName(${rowIndex}, this.value)">
-                    </div>
-                `;
+            if (val > 0) {
+                shapeClass = 'bar-active shadow-sm'; 
+                textClass = 'text-white font-bold';
                 
-                // 月份格子
-                let monthsHtml = '';
-                for (let i = 0; i < 12; i++) {
-                    const val = item.values[i] || 0;
-                    
-                    // 累加總數
-                    monthlyTotals[i] += val;
+                if (prevVal === 0 && nextVal > 0) shapeClass += ' rounded-l-full'; 
+                else if (prevVal > 0 && nextVal === 0) shapeClass += ' rounded-r-full'; 
+                else if (prevVal === 0 && nextVal === 0) shapeClass += ' rounded-full scale-90'; 
+                else shapeClass += ' rect-flat'; 
+            }
 
-                    const prevVal = item.values[i-1] || 0;
-                    const nextVal = item.values[i+1] || 0;
-                    
-                    let shapeClass = 'bar-track'; 
-                    let textClass = 'text-transparent group-hover:text-gray-300'; 
-
-                    if (val > 0) {
-                        shapeClass = 'bar-active shadow-sm'; 
-                        textClass = 'text-white font-bold';
-                        
-                        if (prevVal === 0 && nextVal > 0) shapeClass += ' rounded-l-full'; 
-                        else if (prevVal > 0 && nextVal === 0) shapeClass += ' rounded-r-full'; 
-                        else if (prevVal === 0 && nextVal === 0) shapeClass += ' rounded-full scale-90'; 
-                        else shapeClass += ' rect-flat'; 
-                    }
-
-                    monthsHtml += `
-                        <div class="month-cell col-${i+1} ${shapeClass}">
-                            <input type="number" 
-                                class="invisible-input ${textClass}" 
-                                value="${val > 0 ? val : ''}" 
-                                placeholder=""
-                                onchange="updateValue(${rowIndex}, ${i}, this.value)"
-                            >
-                        </div>
-                    `;
-                }
-
-                // 刪除按鈕
-                let deleteHtml = `
-                    <div class="text-center opacity-0 group-hover:opacity-100 transition cursor-pointer text-gray-300 hover:text-red-400"
-                         onclick="deleteRow(${rowIndex})">
-                        <i class="fas fa-times"></i>
-                    </div>
-                `;
-
-                rowDiv.innerHTML = nameHtml + monthsHtml + deleteHtml;
-                container.appendChild(rowDiv);
-            });
-
-            // 2. 渲染總計列
-            const totalRow = document.createElement('div');
-            totalRow.className = "budget-row mt-3 pt-2 border-t-2 border-dashed border-gray-200"; 
-            
-            let totalHtml = `
-                <div class="pl-2 font-bold text-gray-500 text-sm text-right pr-4">
-                    <i class="fas fa-calculator mr-1"></i> 月總計
-                </div>`;
-            
-            monthlyTotals.forEach((sum, i) => {
-                let colorClass = currentTab === 'income' ? 'text-[#E27D60]' : 'text-[#8F7A6E]';
-                if(sum === 0) colorClass = 'text-gray-300'; 
-
-                totalHtml += `
-                    <div class="text-center font-bold text-xs md:text-sm ${colorClass} col-${i+1}">
-                        ${sum > 0 ? sum.toLocaleString() : '-'}
-                    </div>
-                `;
-            });
-
-            totalHtml += `<div></div>`; // 補空位
-
-            totalRow.innerHTML = totalHtml;
-            container.appendChild(totalRow);
+            monthsHtml += `
+                <div class="month-cell col-${i+1} ${shapeClass}">
+                    <input type="number" 
+                        class="invisible-input ${textClass}" 
+                        value="${val > 0 ? val : ''}" 
+                        onchange="updateValue(${rowIndex}, ${i}, this.value)"
+                    >
+                </div>
+            `;
         }
 
+        // 3. ✨✨✨ 操作按鈕區 (上移 / 下移 / 刪除)
+        // 判斷是否為第一行或最後一行，來決定要不要隱藏箭頭
+        const isFirst = rowIndex === 0;
+        const isLast = rowIndex === data.length - 1;
+
+        let actionsHtml = `
+            <div class="flex justify-end items-center gap-1 opacity-0 group-hover:opacity-100 transition pr-2">
+                <button onclick="moveRow(${rowIndex}, -1)" class="p-1 text-gray-300 hover:text-gray-600 ${isFirst ? 'invisible' : ''}" title="上移">
+                    <i class="fas fa-chevron-up text-xs"></i>
+                </button>
+                
+                <button onclick="moveRow(${rowIndex}, 1)" class="p-1 text-gray-300 hover:text-gray-600 ${isLast ? 'invisible' : ''}" title="下移">
+                    <i class="fas fa-chevron-down text-xs"></i>
+                </button>
+
+                <button onclick="deleteRow(${rowIndex})" class="p-1 text-gray-300 hover:text-red-400 ml-1" title="刪除">
+                    <i class="fas fa-trash text-sm"></i>
+                </button>
+            </div>
+        `;
+
+        rowDiv.innerHTML = nameHtml + monthsHtml + actionsHtml;
+        container.appendChild(rowDiv);
+    });
+
+    // 4. 總計列 (保持不變)
+    const totalRow = document.createElement('div');
+    totalRow.className = "budget-row mt-3 pt-2 border-t-2 border-dashed border-gray-200"; 
+    
+    let totalHtml = `
+        <div class="pl-2 font-bold text-gray-500 text-sm text-right pr-4">
+            <i class="fas fa-calculator mr-1"></i> 月總計
+        </div>`;
+    
+    monthlyTotals.forEach((sum, i) => {
+        let colorClass = currentTab === 'income' ? 'text-[#E27D60]' : 'text-[#8F7A6E]';
+        if(sum === 0) colorClass = 'text-gray-300'; 
+        totalHtml += `
+            <div class="text-center font-bold text-xs md:text-sm ${colorClass} col-${i+1}">
+                ${sum > 0 ? sum.toLocaleString() : '-'}
+            </div>
+        `;
+    });
+    totalHtml += `<div></div>`; 
+    totalRow.innerHTML = totalHtml;
+    container.appendChild(totalRow);
+}
         // ==========================================
         // 資料操作
         // ==========================================
@@ -561,4 +565,5 @@ function moveRow(index, direction) {
     </script>
 </body>
 </html>
+
 
