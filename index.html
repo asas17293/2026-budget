@@ -359,18 +359,39 @@
             container.appendChild(totalRow);
         }
 
+// ==========================================
+        // 資料操作 (已加入自動雲端儲存)
         // ==========================================
-        // 資料操作
-        // ==========================================
+        
+        // 定義一個計時器變數 (防手震用)
+        let autoSaveTimer = null;
+
+        // ★ 核心功能：觸發自動儲存
+        function triggerCloudSave() {
+            // 1. 改變按鈕狀態，讓你知道正在等待儲存
+            const btn = document.getElementById('saveBtn');
+            btn.innerHTML = '<i class="fas fa-circle-notch fa-spin text-gray-400"></i> <span class="text-gray-400">待命...</span>';
+            
+            // 2. 如果之前有正在倒數的計時器，先取消它 (代表你還在打字)
+            if (autoSaveTimer) clearTimeout(autoSaveTimer);
+
+            // 3. 設定一個新的計時器，2秒後執行儲存
+            autoSaveTimer = setTimeout(() => {
+                saveData(true); // true 代表這是自動觸發的
+            }, 2000); 
+        }
+
         function updateItemName(index, newName) {
             appData[currentTab][index].name = newName;
-            saveLocalData();
+            saveLocalData();      // 本地立刻存
+            triggerCloudSave();   // 雲端排隊存
         }
 
         function updateItemCategory(index, newCategory) {
             appData[currentTab][index].category = newCategory;
-            renderUI(); // 重畫，項目會跳到新的分類區塊
+            renderUI(); 
             saveLocalData();
+            triggerCloudSave();   // 雲端排隊存
         }
 
         function updateValue(rowIndex, monthIndex, value) {
@@ -378,23 +399,25 @@
             appData[currentTab][rowIndex].values[monthIndex] = num;
             renderUI();
             saveLocalData();
+            triggerCloudSave();   // 雲端排隊存
         }
 
-        // ★ 新增項目邏輯 (讀取下拉選單)
         function addNewRow() {
-            // 取得使用者在新增按鈕旁選取的分類
             const selectEl = document.getElementById('newCategorySelect');
             const selectedCat = selectEl.value;
 
             appData[currentTab].push({
-                category: selectedCat, // 賦予分類
+                category: selectedCat,
                 name: "新項目",
                 values: Array(12).fill(0)
             });
             renderUI();
             saveLocalData();
             
-            // 自動捲動到最下方 (稍微延遲確保渲染完成)
+            // 新增項目後立刻存一次，不用等
+            saveData(true); 
+
+            // 自動捲動
             setTimeout(() => {
                 const container = document.getElementById('dataRowsContainer');
                 const lastHeader = Array.from(container.querySelectorAll('.section-header')).pop(); 
@@ -407,12 +430,14 @@
                 appData[currentTab].splice(index, 1);
                 renderUI();
                 saveLocalData();
+                saveData(true); // 刪除後立刻存
             }
         }
 
-        document.getElementById('appTitle').addEventListener('blur', function() {
+        document.getElementById('appTitle').addEventListener('input', function() {
             appData.title = this.innerText;
             saveLocalData();
+            triggerCloudSave(); // 改標題也要自動存
         });
 
         function highlightColumn(monthIndex) {
@@ -422,7 +447,7 @@
         }
 
         // ==========================================
-        // 統計與儲存 (維持不變)
+        // 儲存邏輯 (Local Storage + Cloud)
         // ==========================================
         function saveLocalData() {
             localStorage.setItem('earthBudget2026_cat_v1', JSON.stringify(appData));
@@ -432,30 +457,52 @@
             const saved = localStorage.getItem('earthBudget2026_cat_v1');
             if (saved) {
                 const savedData = JSON.parse(saved);
-                // 簡單檢查是否有 category 欄位，若無則視為舊資料需轉移 (這裡簡單處理：直接用)
                 appData = savedData;
                 document.getElementById('appTitle').innerText = appData.title || "地球預算 2026";
             }
         }
 
-        function saveData() {
-            saveLocalData();
+        function saveData(isAuto = false) {
+            saveLocalData(); // 雙重保險，先存本地
+
             const btn = document.getElementById('saveBtn');
-            const originalContent = btn.innerHTML;
-            btn.innerHTML = '<i class="fas fa-check"></i> <span>已儲存</span>';
-            btn.classList.add('text-green-600', 'border-green-300');
+            const originalContent = '<i class="fas fa-cloud-upload-alt"></i> <span>儲存</span>';
+
+            // 如果是手動按按鈕，顯示「儲存中...」
+            // 如果是自動觸發，顯示「同步中...」
+            if (isAuto) {
+                btn.innerHTML = '<i class="fas fa-sync fa-spin"></i> <span>同步中...</span>';
+                btn.className = "flex items-center gap-2 bg-gray-100 border border-gray-300 px-4 py-2 rounded-lg text-gray-500 transition shadow-inner";
+            } else {
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>儲存中...</span>';
+            }
             
             if (API_URL) {
                 fetch(API_URL, {
-                    method: 'POST', mode: 'no-cors',
+                    method: 'POST',
+                    mode: 'no-cors',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(appData)
-                }).catch(e => console.error(e));
+                }).then(() => {
+                    // 儲存成功後的狀態
+                    setTimeout(() => {
+                        btn.innerHTML = '<i class="fas fa-check"></i> <span>已同步</span>';
+                        btn.className = "flex items-center gap-2 bg-white border border-green-300 px-4 py-2 rounded-lg text-green-600 shadow-sm";
+                        
+                        // 2秒後變回原樣 (若是自動儲存則保持「已同步」久一點，或視需求調整)
+                         if (!isAuto) {
+                            setTimeout(() => {
+                                btn.innerHTML = originalContent;
+                                btn.className = "flex items-center gap-2 bg-white border border-gray-300 px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-50 transition shadow-sm";
+                            }, 2000);
+                         }
+                    }, 500);
+                }).catch(e => {
+                    console.error(e);
+                    btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> <span>失敗</span>';
+                    btn.className = "flex items-center gap-2 bg-red-50 border border-red-300 px-4 py-2 rounded-lg text-red-600 shadow-sm";
+                });
             }
-            setTimeout(() => {
-                btn.innerHTML = originalContent;
-                btn.classList.remove('text-green-600', 'border-green-300');
-            }, 1500);
         }
 
         async function loadCloudData() {
@@ -540,6 +587,7 @@
     </script>
 </body>
 </html>
+
 
 
 
