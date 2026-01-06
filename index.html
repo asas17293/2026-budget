@@ -1,4 +1,4 @@
-<index.html>
+<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
@@ -192,7 +192,7 @@
             loadLocalData();
             renderHeaderMonths();
             renderUI();
-            loadCloudData(); //
+            loadCloudData();
         });
 
         // ==========================================
@@ -257,7 +257,7 @@
             }
         }
 
-       // 渲染主要資料列 (含每月總計功能)
+        // 渲染主要資料列 (含每月總計功能)
         function renderUI() {
             if (currentTab === 'stats') return;
 
@@ -265,10 +265,10 @@
             container.innerHTML = '';
             const data = appData[currentTab];
             
-            // 準備一個陣列來計算每月總和 (初始化 12 個 0)
+            // 準備一個陣列來計算每月總和
             let monthlyTotals = Array(12).fill(0);
 
-            // 1. 渲染原本的各個項目
+            // 1. 渲染項目
             data.forEach((item, rowIndex) => {
                 const rowDiv = document.createElement('div');
                 rowDiv.className = "budget-row group";
@@ -282,12 +282,12 @@
                     </div>
                 `;
                 
-                // 月份格子 (長條圖邏輯 + 累加總數)
+                // 月份格子
                 let monthsHtml = '';
                 for (let i = 0; i < 12; i++) {
                     const val = item.values[i] || 0;
                     
-                    // ★在這裡順便把金額加到總合裡
+                    // 累加總數
                     monthlyTotals[i] += val;
 
                     const prevVal = item.values[i-1] || 0;
@@ -330,22 +330,18 @@
                 container.appendChild(rowDiv);
             });
 
-            // 2. ★ 新增：渲染「每月總計」列
+            // 2. 渲染總計列
             const totalRow = document.createElement('div');
-            // 加一點上邊框與間距，讓它跟上面分開
             totalRow.className = "budget-row mt-3 pt-2 border-t-2 border-dashed border-gray-200"; 
             
-            // 總計標題
             let totalHtml = `
                 <div class="pl-2 font-bold text-gray-500 text-sm text-right pr-4">
                     <i class="fas fa-calculator mr-1"></i> 月總計
                 </div>`;
             
-            // 12個月的總數字
             monthlyTotals.forEach((sum, i) => {
-                // 判斷顏色：依據目前是「收入」還是「支出」給予不同顏色
                 let colorClass = currentTab === 'income' ? 'text-[#E27D60]' : 'text-[#8F7A6E]';
-                if(sum === 0) colorClass = 'text-gray-300'; // 如果是 0 就變灰色
+                if(sum === 0) colorClass = 'text-gray-300'; 
 
                 totalHtml += `
                     <div class="text-center font-bold text-xs md:text-sm ${colorClass} col-${i+1}">
@@ -354,8 +350,7 @@
                 `;
             });
 
-            // 最後補一個空白格 (對齊刪除按鈕欄)
-            totalHtml += `<div></div>`;
+            totalHtml += `<div></div>`; // 補空位
 
             totalRow.innerHTML = totalHtml;
             container.appendChild(totalRow);
@@ -373,7 +368,7 @@
         function updateValue(rowIndex, monthIndex, value) {
             const num = parseFloat(value) || 0;
             appData[currentTab][rowIndex].values[monthIndex] = num;
-            renderUI(); // 重新渲染以更新長條圖形狀
+            renderUI(); // 重新渲染以更新長條圖形狀和總計
             saveLocalData();
         }
 
@@ -402,10 +397,7 @@
 
         // 高亮月份功能
         function highlightColumn(monthIndex) {
-            // 清除現有高亮
             document.querySelectorAll('.month-cell').forEach(el => el.classList.remove('highlight-col'));
-            
-            // 加入新高亮
             const cells = document.querySelectorAll(`.col-${monthIndex}`);
             cells.forEach(el => el.classList.add('highlight-col'));
         }
@@ -414,7 +406,6 @@
         // 統計圖表 (Chart.js)
         // ==========================================
         function updateStats() {
-            // 1. 計算數據
             let monthlyIncome = Array(12).fill(0);
             let monthlyExpense = Array(12).fill(0);
             let totalIncome = 0;
@@ -436,12 +427,10 @@
                 expenseBreakdown[item.name] = rowSum;
             });
 
-            // 更新數字看板
             document.getElementById('statTotalIncome').innerText = '$' + totalIncome.toLocaleString();
             document.getElementById('statTotalExpense').innerText = '$' + totalExpense.toLocaleString();
             document.getElementById('statBalance').innerText = '$' + (totalIncome - totalExpense).toLocaleString();
 
-            // 2. 渲染對比柱狀圖
             const ctxComp = document.getElementById('comparisonChart').getContext('2d');
             if(comparisonChartInstance) comparisonChartInstance.destroy();
             
@@ -461,10 +450,7 @@
                 }
             });
 
-            // 3. 渲染圓餅圖 (收入)
             renderPieChart('incomePieChart', incomeBreakdown, ['#E27D60', '#E8A87C', '#C38D9E', '#41B3A3', '#E8A87C'], incomePieInstance, (i) => incomePieInstance = i);
-            
-            // 4. 渲染圓餅圖 (支出)
             renderPieChart('expensePieChart', expenseBreakdown, ['#8F7A6E', '#A4B494', '#C0B283', '#DCD0C0', '#373A36'], expensePieInstance, (i) => expensePieInstance = i);
         }
 
@@ -492,7 +478,7 @@
         }
 
         // ==========================================
-        // 儲存邏輯 (Local Storage + 預留 Cloud)
+        // 儲存邏輯 (Local Storage + Cloud)
         // ==========================================
         function saveLocalData() {
             localStorage.setItem('earthBudget2026_v2', JSON.stringify(appData));
@@ -507,15 +493,13 @@
         }
 
         function saveData() {
-            saveLocalData(); // 先存本地
+            saveLocalData(); 
             
-            // 視覺回饋
             const btn = document.getElementById('saveBtn');
             const originalContent = btn.innerHTML;
             btn.innerHTML = '<i class="fas fa-check"></i> <span>已儲存</span>';
             btn.classList.add('text-green-600', 'border-green-300');
             
-            // 若有 API 則上傳
             if (API_URL) {
                 fetch(API_URL, {
                     method: 'POST',
@@ -530,39 +514,32 @@
                 btn.classList.remove('text-green-600', 'border-green-300');
             }, 1500);
         }
-async function loadCloudData() {
-    if (!API_URL) return; 
 
-    // 顯示載入中的提示
-    const titleEl = document.getElementById('appTitle');
-    titleEl.innerText = "資料同步中...";
+        async function loadCloudData() {
+            if (!API_URL) return; 
 
-    try {
-        const response = await fetch(API_URL);
-        const cloudData = await response.json();
+            const titleEl = document.getElementById('appTitle');
+            titleEl.innerText = "資料同步中...";
 
-        if (cloudData.income || cloudData.expense) {
-            appData.income = cloudData.income || [];
-            appData.expense = cloudData.expense || [];
-            
-            renderUI();
-            updateStats();
-            saveLocalData(); 
-            console.log("雲端資料同步成功！");
+            try {
+                const response = await fetch(API_URL);
+                const cloudData = await response.json();
+
+                if (cloudData.income || cloudData.expense) {
+                    appData.income = cloudData.income || [];
+                    appData.expense = cloudData.expense || [];
+                    
+                    renderUI();
+                    updateStats();
+                    saveLocalData(); 
+                    console.log("雲端資料同步成功！");
+                }
+            } catch (error) {
+                console.error("同步失敗:", error);
+            } finally {
+                titleEl.innerText = appData.title; 
+            }
         }
-    } catch (error) {
-        console.error("同步失敗:", error);
-    } finally {
-        titleEl.innerText = appData.title; 
-    }
-}
     </script>
 </body>
-
 </html>
-
-
-
-
-
-
